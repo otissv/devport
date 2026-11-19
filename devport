@@ -99,6 +99,8 @@ def main():
     sub.add_parser('scan')
     run = sub.add_parser('run')
     run.add_argument('command', nargs=argparse.REMAINDER)
+    set_port = sub.add_parser('set', help='Set the current project’s reserved port')
+    set_port.add_argument('port', type=int)
     for action in ('kill', 'remove'):
         p = sub.add_parser(action)
         p.add_argument('port', nargs='?', type=int)
@@ -116,8 +118,25 @@ def main():
                 rows.append((Path(path).name, port, status, path))
             table(['PROJECT', 'PORT', 'STATUS', 'PATH'], rows)
         elif args.action == 'scan':
-            reserved = {port: path for path, port in data.items()}
-            table(['PORT', 'PID', 'DIRECTORY', 'RESERVED FOR'], [(port, pid or '?', cwd(pid) if pid else '?', reserved.get(port, '-')) for port, pids in sorted(active.items()) for pid in sorted(pids) or [None]])
+            table(['PORT', 'PID', 'DIRECTORY'], [(port, pid or '?', cwd(pid) if pid else '?') for port, pids in sorted(active.items()) for pid in sorted(pids) or [None]])
+        elif args.action == 'set':
+            port = args.port
+            if not 1 <= port <= 65535:
+                raise ValueError('Port must be between 1 and 65535.')
+            previous = data.get(project)
+            if previous == port:
+                print(f'Port {port} is already assigned to {project}.')
+                return 0
+            if previous is not None and previous in active:
+                raise ValueError(f'Current port {previous} is occupied; stop its server before changing.')
+            other = next((path for path, number in data.items() if number == port and path != project), None)
+            if other is not None:
+                raise ValueError(f'Port {port} is reserved for {other}.')
+            if port in active or not free(port):
+                raise ValueError(f'Port {port} is occupied or unavailable.')
+            data[project] = port
+            save(data)
+            print(f'{project}: {previous} -> {port}' if previous is not None else f'{project}: assigned port {port}')
         elif args.action == 'run':
             command = args.command
             if command and command[0] == '--':
